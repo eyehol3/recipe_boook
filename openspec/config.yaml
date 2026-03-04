@@ -1,0 +1,75 @@
+schema: spec-driven
+
+context: |
+  # Recipe Book — AI-Driven Personal Note-Taking Bot
+
+  ## Problem
+  The user maintains "ongoing" note files — living documents like
+  recipe_notes.md, health_notes.md, log_notes.md, content_notes.md, etc.
+  These aren't diary entries; they're personal knowledge bases for observations,
+  findings, things that work, interesting bits, thoughts.
+  The core problem: notes are often not taken because the user isn't near their
+  MacBook. The moment passes and the thought is lost.
+
+  ## Solution
+  An OpenClaw-powered Telegram bot that captures notes via voice/text messages.
+  The LLM figures out which file the note belongs to and confirms with the user
+  before adding it. The user can also retrieve, search, and edit notes via Telegram.
+  Reminders (one-shot and recurring) for long-term follow-ups.
+
+  ## Notes Location & Format
+  Notes currently live at: /Users/qwerty/Dropbox/[md notes]/ongoing/
+  Each note file has its own formatting style — some use `---` dividers with dates,
+  others may not. The bot should respect and follow the existing formatting
+  conventions of each individual file, not enforce a universal format.
+
+  ## Tech Stack
+  - Runtime: Node.js (JS-only)
+  - AI Framework: OpenClaw — gateway-centric agent framework (uses AgentSkills format)
+  - Telegram: via OpenClaw's built-in Telegram channel integration
+  - LLM: model-agnostic via OpenClaw (Gemini/OpenAI/Claude)
+  - Voice: OpenClaw built-in voice-to-text
+  - Sync: Syncthing — bidirectional file sync between Mac (Dropbox folder) and Termux server
+  - Reminders: via OpenClaw cron + persistent storage
+  - Deployment: Termux server (phoneserver), supervisor, Makefile deploy pipeline
+
+  ## Sync Strategy
+  Syncthing runs on both the Mac and the Termux server, keeping the notes folder
+  in sync bidirectionally. Handles disconnections gracefully (queues changes,
+  syncs on reconnect). Conflict handling (e.g. simultaneous edits) will be
+  addressed by the bot — detecting .sync-conflict files and notifying the user.
+
+  ## Skills
+  OpenClaw uses the AgentSkills format (same as anthropics/skills repo).
+  Skills may be custom-written or existing off-the-shelf skills — to be determined
+  per capability (notes, reminders, etc.).
+
+  ## Reference Materials (in ./references/)
+  - LyAdminBot: Reference Telegram bot by LyoSU. Telegraf-based, clean middleware
+    chain, handler/route/middleware separation. Use for engineering and design
+    patterns when building Telegram bot functionality.
+  - anthropics skills-skill-creator: Official Anthropic skill for creating new
+    AgentSkills. Use when writing custom skills for this project.
+  - Existing deploy Makefiles in sibling projects (cron-checker-bot,
+    telegram-youtube-summarizer): rsync + supervisor deploy pattern to Termux
+    phoneserver. Follow same conventions.
+
+  ## Conventions
+  - Deploy target: phoneserver (Termux, supervisor-managed)
+  - .env for secrets (bot token, LLM API keys)
+  - Makefile for deploy pipeline
+  - Single-user (personal use) for v1
+
+  ## Future Considerations (not v1)
+  - Exposing notes via a simple webpage (read-only Q&A)
+  - Multi-user support (each user gets their own notes/agent)
+  - Custom notetaking rules per user
+
+rules:
+  proposal:
+    - Focus on what makes this different from a generic notes app
+    - Keep scope to personal use (single user) for v1
+    - Do not prescribe note formatting — the bot adapts to each file's existing style
+  tasks:
+    - Break tasks into implementable chunks
+    - Include a deploy task with Makefile

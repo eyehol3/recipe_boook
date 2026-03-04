@@ -1,0 +1,15 @@
+{
+  "name": "recipe_book",
+  "version": "2.0.0",
+  "description": "Personal Telegram notes bot",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "openai": "^4",
+    "telegraf": "^4"
+  }
+}
