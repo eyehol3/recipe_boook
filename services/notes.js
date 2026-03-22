@@ -1,7 +1,7 @@
-import { readdir, readFile, appendFile, stat, open } from 'fs/promises'
+import { readdir, readFile, writeFile, appendFile, stat, open } from 'fs/promises'
 import { join } from 'path'
 import { config } from '../config.js'
-import { dbxListFiles, dbxReadFile, dbxAppendFile } from './dropbox.js'
+import { dbxListFiles, dbxReadFile, dbxAppendFile, dbxWriteFile } from './dropbox.js'
 
 const useDropbox = Boolean(config.dropboxRefreshToken)
 
@@ -57,4 +57,13 @@ export async function appendNote(filename, content) {
   }
 
   await appendFile(filePath, `${prefix}${content}\n`, 'utf-8')
+}
+
+export async function writeNote(filename, fullContent) {
+  if (useDropbox) return dbxWriteFile(filename, fullContent)
+
+  const filePath = join(config.notesDir, filename)
+  if (!filePath.startsWith(config.notesDir)) throw new Error('Invalid filename')
+
+  await writeFile(filePath, fullContent, 'utf-8')
 }

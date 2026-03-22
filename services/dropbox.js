@@ -150,6 +150,13 @@ async function dbxUpload(filename, content) {
 }
 
 /**
+ * Write full content to a file (overwrite).
+ */
+export async function dbxWriteFile(filename, content) {
+  await dbxUpload(filename, content)
+}
+
+/**
  * Append text to a file. Downloads current content, appends, re-uploads.
  */
 export async function dbxAppendFile(filename, text) {

@@ -1,6 +1,7 @@
-import { appendNote, listNotes, readNote } from '../services/notes.js'
+import { appendNote, listNotes, readNote, writeNote } from '../services/notes.js'
 import { classifyAndFormat } from '../services/llm.js'
 import { transcribe } from '../services/transcribe.js'
+import { scheduleAutoSave, cancelAutoSave } from '../helpers/autoSaveTimer.js'
 
 const LANGUAGES = [
   { code: 'uk', label: '🇺🇦 Українська' },
@@ -10,6 +11,17 @@ const LANGUAGES = [
 ]
 
 const LANG_LABELS = { uk: '🇺🇦', en: '🇬🇧', ru: '🇷🇺', auto: '🌐' }
+
+function buildPreview(result) {
+  const header = `\`${result.target_file}\``
+  if (result.operation === 'delete') {
+    return `${header}\n\n━━ Removing ━━\n${result.old_content}`
+  }
+  if (result.operation === 'replace') {
+    return `${header}\n\n━━ Before ━━\n${result.old_content}\n\n━━ After ━━\n${result.formatted_entry}`
+  }
+  return `${header}\n\n${result.formatted_entry}`
+}
 
 function captureKeyboard(isVoice = false, currentLang = 'uk') {
   if (!isVoice) {
@@ -30,20 +42,39 @@ function captureKeyboard(isVoice = false, currentLang = 'uk') {
 }
 
 /**
- * Handle "Save" button — append note to file.
+ * Handle "Save" button — perform the pending operation (append/replace/delete).
  */
 export const handleConfirm = async (ctx) => {
+  cancelAutoSave(ctx.chat.id)
   const pending = ctx.session.pendingNote
   if (!pending) {
     return ctx.answerCbQuery('No pending note.')
   }
 
-  await appendNote(pending.filename, pending.content)
+  const op = pending.operation || 'append'
+
+  if (op === 'replace' || op === 'delete') {
+    const fullContent = await readNote(pending.filename)
+    if (!fullContent.includes(pending.oldContent)) {
+      ctx.session.pendingNote = null
+      await ctx.answerCbQuery('Content not found in file — it may have changed.')
+      await ctx.editMessageText('Content not found in file — it may have been modified. Operation cancelled.')
+      return
+    }
+    const updated = op === 'delete'
+      ? fullContent.replace(pending.oldContent, '').replace(/\n{3,}/g, '\n\n').trim() + '\n'
+      : fullContent.replace(pending.oldContent, pending.content)
+    await writeNote(pending.filename, updated)
+  } else {
+    await appendNote(pending.filename, pending.content)
+  }
+
+  const label = op === 'delete' ? 'Deleted from' : op === 'replace' ? 'Updated in' : 'Saved to'
   ctx.session.pendingNote = null
 
   await ctx.answerCbQuery('Saved!')
   await ctx.editMessageText(
-    `${ctx.callbackQuery.message.text}\n\nSaved to ${pending.filename}.`
+    `${ctx.callbackQuery.message.text}\n\n${label} ${pending.filename}.`
   )
 }
 
@@ -51,6 +82,7 @@ export const handleConfirm = async (ctx) => {
  * Handle "Cancel" button — discard pending note.
  */
 export const handleCancel = async (ctx) => {
+  cancelAutoSave(ctx.chat.id)
   ctx.session.pendingNote = null
   await ctx.answerCbQuery('Cancelled.')
   await ctx.editMessageText('Note cancelled.')
@@ -103,26 +135,30 @@ export const handleRefileSelect = async (ctx) => {
     // file might be new/empty
   }
 
+  const isVoice = pending.isVoice || false
   const noteFiles = await listNotes()
   const result = await classifyAndFormat({
     message: pending.originalMessage,
     noteFiles,
     targetFileContent: styleRef,
+    isVoice,
   })
 
   pending.filename = newFile
   pending.content = result.formatted_entry
+  pending.oldContent = result.old_content
+  pending.operation = result.operation
 
-  const isVoice = pending.isVoice || false
   const lang = ctx.session.voiceLang || 'uk'
 
-  const previewText = `\`${newFile}\`\n\n${pending.content}`
+  const previewText = buildPreview(result)
   const markup = captureKeyboard(isVoice, lang)
   try {
     await ctx.editMessageText(previewText, { parse_mode: 'Markdown', reply_markup: markup })
   } catch (_) {
     await ctx.editMessageText(previewText, { reply_markup: markup })
   }
+  scheduleAutoSave(ctx.chat.id, { telegram: ctx.telegram, session: ctx.session })
 }
 
 /**
@@ -198,17 +234,20 @@ export const handleLangSelect = async (ctx) => {
     message: text,
     noteFiles,
     targetFileContent: styleRefs.join('\n\n'),
+    isVoice: true,
   })
 
   ctx.session.pendingNote = {
     filename: result.target_file,
     content: result.formatted_entry,
+    oldContent: result.old_content,
+    operation: result.operation,
     originalMessage: text,
     isVoice: true,
     previewMsgId: ctx.session.pendingNote?.previewMsgId,
   }
 
-  const preview = `\`${result.target_file}\`\n\n${result.formatted_entry}`
+  const preview = buildPreview(result)
 
   // edit preview message in-place
   const markup = captureKeyboard(true, newLang)
@@ -217,4 +256,5 @@ export const handleLangSelect = async (ctx) => {
   } catch (_) {
     await ctx.editMessageText(preview, { reply_markup: markup })
   }
+  scheduleAutoSave(ctx.chat.id, { telegram: ctx.telegram, session: ctx.session })
 }

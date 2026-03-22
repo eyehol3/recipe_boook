@@ -48,10 +48,14 @@ async function chat(messages, { schema, model } = {}) {
 
 /**
  * Classify a user message into a note file and format the entry.
- * Returns { target_file, formatted_entry, summary }
+ * Returns { operation, target_file, formatted_entry, old_content, summary }
  */
-export async function classifyAndFormat({ message, noteFiles, targetFileContent }) {
+export async function classifyAndFormat({ message, noteFiles, targetFileContent, isVoice = false }) {
   const now = nowKyiv()
+
+  const transcriptNote = isVoice
+    ? `\n\nIMPORTANT — VOICE TRANSCRIPT: This message was transcribed from a voice recording, NOT typed. The user may have made verbal self-corrections mid-sentence (e.g. "no wait, better like this", "actually, change that to…", "ні, краще отак"). Interpret the user's FINAL intent — discard earlier phrasing that was explicitly corrected. The user cannot edit before sending (unlike text), so treat corrections as part of the natural speech flow.\n`
+    : ''
 
   const prompt = `You are a personal note-taking assistant. The user sent a message that should be saved to one of their note files.
 
@@ -61,9 +65,14 @@ Available note files (with recent content for style reference):
 ${targetFileContent}
 
 User's message:
-"${message}"
+"${message}"${transcriptNote}
 
-Determine the correct target file for this note. Then format the note entry to EXACTLY match the existing style of that specific file.
+First, determine what the user wants to do:
+- "append" — add new content to a file (the default for new notes/ideas/entries)
+- "replace" — modify or update existing content in a file (e.g. "change X to Y", "update the dal recipe to use almond milk instead of coconut", "mark the groceries todo as done")
+- "delete" — remove existing content from a file (e.g. "delete the dal recipe", "remove the dentist appointment from todos")
+
+Then determine the correct target file. For "replace" and "delete" operations, find the exact content in the file that should be changed.
 
 FORMATTING RULES — follow these strictly:
 - Study the EXISTING entries in the target file carefully. Reproduce the same structure: date format, separators (---, blank lines, etc.), indentation, line spacing.
@@ -73,11 +82,17 @@ FORMATTING RULES — follow these strictly:
 - LANGUAGE: Preserve the original language of the user's message. Do not translate.
 - Keep the user's content as-is. You are formatting the entry structure, not rewriting the message.
 
+For "replace": old_content must be the EXACT text from the file that will be replaced (copy verbatim), and formatted_entry is the new text that replaces it.
+For "delete": old_content must be the EXACT text from the file that will be removed, and formatted_entry should be an empty string "".
+For "append": old_content should be an empty string "", and formatted_entry is the new entry.
+
 Respond as JSON with exactly these fields:
 {
+  "operation": "append" | "replace" | "delete",
   "target_file": "filename.md",
-  "formatted_entry": "the formatted note text matching the file's style",
-  "summary": "brief 1-line description of what was captured"
+  "formatted_entry": "new content (empty string for delete)",
+  "old_content": "existing content being replaced/deleted (empty string for append)",
+  "summary": "brief 1-line description of the change"
 }`
 
   return chat([{ role: 'user', content: prompt }], {
@@ -86,11 +101,13 @@ Respond as JSON with exactly these fields:
       schema: {
         type: 'object',
         properties: {
+          operation: { type: 'string', enum: ['append', 'replace', 'delete'] },
           target_file: { type: 'string' },
           formatted_entry: { type: 'string' },
+          old_content: { type: 'string' },
           summary: { type: 'string' },
         },
-        required: ['target_file', 'formatted_entry', 'summary'],
+        required: ['operation', 'target_file', 'formatted_entry', 'old_content', 'summary'],
         additionalProperties: false,
       },
     },
