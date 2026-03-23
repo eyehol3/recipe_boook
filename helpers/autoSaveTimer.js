@@ -3,22 +3,34 @@ import { capture as log } from './logger.js'
 
 const timers = new Map()
 const AUTOSAVE_DELAY = 20_000 // 20 seconds
+const POLL_INTERVAL = 5_000   // check every 5s (Android throttles setTimeout)
 
 /**
  * Schedule auto-save for a pending note after AUTOSAVE_DELAY.
- * Resets any existing timer for this chat.
+ * Uses setInterval polling instead of setTimeout because Android aggressively
+ * delays timers when the process is backgrounded (Termux).
  */
 export function scheduleAutoSave(chatId, { telegram, session }) {
   cancelAutoSave(chatId)
 
-  const timerId = setTimeout(async () => {
-    timers.delete(chatId)
-    const pending = session.pendingNote
-    if (!pending) return
+  const deadline = Date.now() + AUTOSAVE_DELAY
+  log.info({ chatId, delay: AUTOSAVE_DELAY }, 'Auto-save scheduled')
 
-    log.info({ chatId, file: pending.filename }, 'Auto-save timer fired')
+  const intervalId = setInterval(async () => {
+    if (Date.now() < deadline) return // not yet
+
+    clearInterval(intervalId)
+    timers.delete(chatId)
 
     try {
+      const pending = session.pendingNote
+      if (!pending) {
+        log.info({ chatId }, 'Auto-save fired but no pending note')
+        return
+      }
+
+      log.info({ chatId, file: pending.filename, op: pending.operation }, 'Auto-save fired')
+
       const op = pending.operation || 'append'
 
       if (op === 'replace' || op === 'delete') {
@@ -46,18 +58,24 @@ export function scheduleAutoSave(chatId, { telegram, session }) {
             `${label} ${pending.filename}.`,
             { reply_markup: { inline_keyboard: [] } }
           )
-        } catch (_) { /* best effort */ }
+        } catch (editErr) {
+          log.warn({ err: editErr, chatId }, 'Auto-save: editMessageText failed, sending fallback')
+          try {
+            await telegram.sendMessage(chatId, `${label} ${pending.filename}.`)
+          } catch (_) { /* best effort */ }
+        }
       }
       session.pendingNote = null
+      log.info({ chatId }, 'Auto-save completed')
     } catch (err) {
-      log.error({ err, chatId }, 'Auto-save timer failed')
+      log.error({ err, chatId }, 'Auto-save failed')
       try {
-        await telegram.sendMessage(chatId, `⚠️ Failed to auto-save note to ${pending?.filename}.`)
+        await telegram.sendMessage(chatId, `⚠️ Failed to auto-save note.`)
       } catch (_) { /* best effort */ }
     }
-  }, AUTOSAVE_DELAY)
+  }, POLL_INTERVAL)
 
-  timers.set(chatId, timerId)
+  timers.set(chatId, intervalId)
 }
 
 /**
@@ -66,7 +84,7 @@ export function scheduleAutoSave(chatId, { telegram, session }) {
 export function cancelAutoSave(chatId) {
   const existing = timers.get(chatId)
   if (existing) {
-    clearTimeout(existing)
+    clearInterval(existing)
     timers.delete(chatId)
   }
 }
