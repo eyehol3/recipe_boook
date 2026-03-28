@@ -198,11 +198,17 @@ async function processCapture(ctx, message, { isVoice = false, lang = DEFAULT_LA
     })
   )
 
+  const targetFileContent = styleRefs.join('\n\n')
+
+  // cache for reuse by refile/lang-change flows (avoids re-reading all files)
+  ctx.session.cachedNoteFiles = noteFiles
+  ctx.session.cachedStyleRefs = targetFileContent
+
   // single LLM call: classify and format
   const result = await classifyAndFormat({
     message,
     noteFiles,
-    targetFileContent: styleRefs.join('\n\n'),
+    targetFileContent,
     isVoice,
   })
 

@@ -138,7 +138,7 @@ export const handleRefileSelect = async (ctx) => {
   }
 
   const isVoice = pending.isVoice || false
-  const noteFiles = await listNotes()
+  const noteFiles = ctx.session.cachedNoteFiles || await listNotes()
   const result = await classifyAndFormat({
     message: pending.originalMessage,
     noteFiles,
@@ -221,23 +221,14 @@ export const handleLangSelect = async (ctx) => {
     }
   }
 
-  // re-classify with new transcription
-  const noteFiles = await listNotes()
-  const styleRefs = await Promise.all(
-    noteFiles.map(async (file) => {
-      try {
-        const tail = await readNote(file, { tail: 50 })
-        return `--- ${file} ---\n${tail}`
-      } catch (_) {
-        return `--- ${file} ---\n(empty)`
-      }
-    })
-  )
+  // re-classify with new transcription (reuse cached style refs from initial capture)
+  const noteFiles = ctx.session.cachedNoteFiles || await listNotes()
+  const targetFileContent = ctx.session.cachedStyleRefs || ''
 
   const result = await classifyAndFormat({
     message: text,
     noteFiles,
-    targetFileContent: styleRefs.join('\n\n'),
+    targetFileContent,
     isVoice: true,
   })
 
