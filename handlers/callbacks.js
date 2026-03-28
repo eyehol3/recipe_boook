@@ -92,6 +92,7 @@ export const handleCancel = async (ctx) => {
  * Handle "Change file" button — show file picker.
  */
 export const handleRefile = async (ctx) => {
+  cancelAutoSave(ctx.chat.id)
   const pending = ctx.session.pendingNote
   if (!pending) {
     return ctx.answerCbQuery('No pending note.')
@@ -122,6 +123,7 @@ export const handleRefileSelect = async (ctx) => {
     const isVoice = pending.isVoice || false
     const lang = ctx.session.voiceLang || 'uk'
     await ctx.editMessageReplyMarkup(captureKeyboard(isVoice, lang))
+    scheduleAutoSave(ctx.chat.id, { telegram: ctx.telegram, session: ctx.session })
     return
   }
 
@@ -165,6 +167,7 @@ export const handleRefileSelect = async (ctx) => {
  * Handle "Language" button — show language picker.
  */
 export const handleLangPicker = async (ctx) => {
+  cancelAutoSave(ctx.chat.id)
   const pending = ctx.session.pendingNote
   if (!pending) {
     return ctx.answerCbQuery('No pending note.')
@@ -190,6 +193,7 @@ export const handleLangSelect = async (ctx) => {
   if (newLang === ctx.session.voiceLang) {
     await ctx.answerCbQuery()
     await ctx.editMessageReplyMarkup(captureKeyboard(true, newLang))
+    scheduleAutoSave(ctx.chat.id, { telegram: ctx.telegram, session: ctx.session })
     return
   }
 
